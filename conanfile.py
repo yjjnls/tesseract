@@ -5,6 +5,12 @@ import os
 import shutil
 from conans import ConanFile, CMake, tools
 
+try:
+    import conanos.conan.hacks.cmake
+except:
+    if os.environ.get('EMSCRIPTEN_VERSIONS'):
+        raise Exception('Please use pip install conanos to patch conan for emscripten binding !')
+
 
 class TesseractConan(ConanFile):
     name = "tesseract"
@@ -63,10 +69,27 @@ class TesseractConan(ConanFile):
             installer.install('pkg-config')
 
     def build(self):
+        emcc = self.is_emscripten()
+
         cmake = CMake(self)
         cmake.definitions['BUILD_TRAINING_TOOLS'] = False
-        cmake.definitions["BUILD_SHARED_LIBS"] = self.options.shared
-        cmake.definitions["STATIC"] = not self.options.shared
+        cmake.definitions["BUILD_SHARED_LIBS"] = True if emcc else self.options.shared
+        cmake.definitions["STATIC"] = False if emcc else not self.options.shared
+        if emcc:
+            #cmake.definitions["GRAPHICS_DISABLED"]="1"
+            #tools.replace_in_file(os.path.join(self.source_subfolder, "src/viewer/svpaint.cpp"),
+            #                      'int main(int argc, char** argv) {',
+            #                      'static int svpaint_main(int argc, char** argv) {')
+            #
+            #tools.replace_in_file(os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"),
+            #                      'PROPERTIES COMPILE_FLAGS "-msse4.1")',
+            #                      'PROPERTIES COMPILE_FLAGS "")')
+            tools.replace_in_file(os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"),
+                                  'PROPERTIES COMPILE_FLAGS "-mavx")',
+                                  'PROPERTIES COMPILE_FLAGS "")')
+            tools.replace_in_file(os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"),
+                                  'PROPERTIES COMPILE_FLAGS "-mavx2")',
+                                  'PROPERTIES COMPILE_FLAGS "")')
 
         # provide patched lept.pc
         shutil.copy(os.path.join(self.deps_cpp_info['leptonica'].rootpath, 'lib', 'pkgconfig', 'lept.pc'), 'lept.pc')
@@ -79,7 +102,7 @@ class TesseractConan(ConanFile):
 
         # if static leptonica used with pkg-config, tesseract must use Leptonica_STATIC_LIBRARIES
         # which use static dependencies like jpeg, png etc provided by lept.pc
-        if not self.options['leptonica'].shared and use_pkg_config:
+        if not emcc and not self.options['leptonica'].shared and use_pkg_config:
             tools.replace_in_file(os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"),
                                   "target_link_libraries       (libtesseract ${Leptonica_LIBRARIES})",
                                   "target_link_libraries       (libtesseract ${Leptonica_STATIC_LIBRARIES})")
