@@ -8,7 +8,7 @@ from conans import ConanFile, CMake, tools
 
 class TesseractConan(ConanFile):
     name = "tesseract"
-    version = "3.05.01"
+    version = "4.0.0-rc3"
     description = "Tesseract Open Source OCR Engine"
     url = "http://github.com/bincrafters/conan-tesseract"
     license = "Apache-2.0"
@@ -23,7 +23,23 @@ class TesseractConan(ConanFile):
     default_options = "shared=False", "fPIC=True", "with_training=False"
     source_subfolder = "source_subfolder"
 
-    requires = "leptonica/1.76.0@bincrafters/stable"
+    requires = "leptonica/1.76.0@conanos/testing"
+
+    def is_emscripten(self):
+        try:
+            return self.settings.compiler == 'emcc'
+        except:
+            return False
+    def configure(self):
+        if self.is_emscripten():
+            del self.settings.os
+            del self.settings.arch
+            self.options.remove("fPIC")
+            self.options.remove("shared")
+            self.options.remove("with_training")
+        else:
+            if self.options.shared:
+                self.options['leptonica'].shared = True
 
     def source(self):
         tools.get("https://github.com/tesseract-ocr/tesseract/archive/%s.tar.gz" % self.version)
@@ -105,7 +121,7 @@ class TesseractConan(ConanFile):
                               "# Provide the include directories to the caller",
                               'get_filename_component(PACKAGE_PREFIX "${CMAKE_CURRENT_LIST_FILE}" PATH)\n'
                               'get_filename_component(PACKAGE_PREFIX "${PACKAGE_PREFIX}" PATH)')
-        if self.settings.os == 'Windows':
+        if hasattr(self.settings,'os') and self.settings.os == 'Windows':
             from_str = self.package_folder.replace('\\', '/')
         else:
             from_str = self.package_folder
@@ -116,7 +132,7 @@ class TesseractConan(ConanFile):
         # remove man pages
         shutil.rmtree(os.path.join(self.package_folder, 'share', 'man'), ignore_errors=True)
         # remove binaries
-        for ext in ['', '.exe']:
+        for ext in ['', '.exe','.js']:
             try:
                 os.remove(os.path.join(self.package_folder, 'bin', 'tesseract'+ext))
             except:
@@ -125,6 +141,8 @@ class TesseractConan(ConanFile):
 
     def package_info(self):
         self.cpp_info.libs = tools.collect_libs(self)
+        if self.is_emscripten():
+            return
         if self.settings.os == "Linux":
             self.cpp_info.libs.extend(["pthread"])
         if self.settings.compiler == "Visual Studio":
