@@ -76,20 +76,41 @@ class TesseractConan(ConanFile):
         cmake.definitions["BUILD_SHARED_LIBS"] = True if emcc else self.options.shared
         cmake.definitions["STATIC"] = False if emcc else not self.options.shared
         if emcc:
-            #cmake.definitions["GRAPHICS_DISABLED"]="1"
-            #tools.replace_in_file(os.path.join(self.source_subfolder, "src/viewer/svpaint.cpp"),
-            #                      'int main(int argc, char** argv) {',
-            #                      'static int svpaint_main(int argc, char** argv) {')
-            #
-            #tools.replace_in_file(os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"),
-            #                      'PROPERTIES COMPILE_FLAGS "-msse4.1")',
-            #                      'PROPERTIES COMPILE_FLAGS "")')
+            shutil.copy("helpers.js",
+            os.path.join(self.source_subfolder, "helpers.js"))
+
+            tools.replace_in_file(os.path.join(self.source_subfolder, "src/viewer/svpaint.cpp"),
+                                  'int main(int argc, char** argv) {',
+                                  'static int svpaint_main(int argc, char** argv) {')
+            
+            tools.replace_in_file(os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"),
+                                  'PROPERTIES COMPILE_FLAGS "-msse4.1")',
+                                  'PROPERTIES COMPILE_FLAGS "")')
             tools.replace_in_file(os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"),
                                   'PROPERTIES COMPILE_FLAGS "-mavx")',
                                   'PROPERTIES COMPILE_FLAGS "")')
             tools.replace_in_file(os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"),
                                   'PROPERTIES COMPILE_FLAGS "-mavx2")',
                                   'PROPERTIES COMPILE_FLAGS "")')
+            tools.replace_in_file(os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"),
+                                  'target_link_libraries           (tesseract libtesseract)',
+                                    'target_link_libraries           (tesseract libtesseract)\n' +
+                                    'set(JS_HELPER "${CMAKE_CURRENT_SOURCE_DIR}/helpers.js")\n' +
+                                    'set(EMSCRIPTEN_LINK_FLAGS "--memory-init-file 0 -s TOTAL_MEMORY=134217728 ' +
+                                                               '-s ALLOW_MEMORY_GROWTH=1 -s DEMANGLE_SUPPORT=1")\n' +
+                                    'set(EMSCRIPTEN_LINK_FLAGS "${EMSCRIPTEN_LINK_FLAGS} -Wno-missing-prototypes")\n' +
+                                    'set(EMSCRIPTEN_LINK_FLAGS "${EMSCRIPTEN_LINK_FLAGS} --pre-js ${JS_HELPER}")\n' +
+                                    'set_target_properties(tesseract PROPERTIES LINK_FLAGS ${EMSCRIPTEN_LINK_FLAGS})')
+
+
+            tools.replace_in_file(os.path.join(self.source_subfolder, "src/api/baseapi.cpp"),
+                                  'locale = std::setlocale(LC_ALL, nullptr);',
+                                  'locale = std::setlocale(LC_ALL, nullptr);\n' +
+                                  '  #ifdef __emscripten__\n' +
+                                  "  if (locale[0]=='C')\n" +
+                                  '    locale="C"; // workaround for emscripten \n' +
+                                  '#endif\n'
+                                  )
 
         # provide patched lept.pc
         shutil.copy(os.path.join(self.deps_cpp_info['leptonica'].rootpath, 'lib', 'pkgconfig', 'lept.pc'), 'lept.pc')
