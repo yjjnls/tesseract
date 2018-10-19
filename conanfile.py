@@ -5,10 +5,16 @@ import os
 import shutil
 from conans import ConanFile, CMake, tools
 
+try:
+    import conanos.conan.hacks.cmake
+except:
+    if os.environ.get('EMSCRIPTEN_VERSIONS'):
+        raise Exception('Please use pip install conanos to patch conan for emscripten binding !')
+
 
 class TesseractConan(ConanFile):
     name = "tesseract"
-    version = "3.05.01"
+    version = "4.0.0-rc3"
     description = "Tesseract Open Source OCR Engine"
     url = "http://github.com/bincrafters/conan-tesseract"
     license = "Apache-2.0"
@@ -23,7 +29,23 @@ class TesseractConan(ConanFile):
     default_options = "shared=False", "fPIC=True", "with_training=False"
     source_subfolder = "source_subfolder"
 
-    requires = "leptonica/1.76.0@bincrafters/stable"
+    requires = "leptonica/1.76.0@conanos/testing"
+
+    def is_emscripten(self):
+        try:
+            return self.settings.compiler == 'emcc'
+        except:
+            return False
+    def configure(self):
+        if self.is_emscripten():
+            del self.settings.os
+            del self.settings.arch
+            self.options.remove("fPIC")
+            self.options.remove("shared")
+            self.options.remove("with_training")
+        else:
+            if self.options.shared:
+                self.options['leptonica'].shared = True
 
     def source(self):
         tools.get("https://github.com/tesseract-ocr/tesseract/archive/%s.tar.gz" % self.version)
@@ -47,10 +69,48 @@ class TesseractConan(ConanFile):
             installer.install('pkg-config')
 
     def build(self):
+        emcc = self.is_emscripten()
+
         cmake = CMake(self)
         cmake.definitions['BUILD_TRAINING_TOOLS'] = False
-        cmake.definitions["BUILD_SHARED_LIBS"] = self.options.shared
-        cmake.definitions["STATIC"] = not self.options.shared
+        cmake.definitions["BUILD_SHARED_LIBS"] = True if emcc else self.options.shared
+        cmake.definitions["STATIC"] = False if emcc else not self.options.shared
+        if emcc:
+            shutil.copy("helpers.js",
+            os.path.join(self.source_subfolder, "helpers.js"))
+
+            tools.replace_in_file(os.path.join(self.source_subfolder, "src/viewer/svpaint.cpp"),
+                                  'int main(int argc, char** argv) {',
+                                  'static int svpaint_main(int argc, char** argv) {')
+            
+            tools.replace_in_file(os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"),
+                                  'PROPERTIES COMPILE_FLAGS "-msse4.1")',
+                                  'PROPERTIES COMPILE_FLAGS "")')
+            tools.replace_in_file(os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"),
+                                  'PROPERTIES COMPILE_FLAGS "-mavx")',
+                                  'PROPERTIES COMPILE_FLAGS "")')
+            tools.replace_in_file(os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"),
+                                  'PROPERTIES COMPILE_FLAGS "-mavx2")',
+                                  'PROPERTIES COMPILE_FLAGS "")')
+            tools.replace_in_file(os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"),
+                                  'target_link_libraries           (tesseract libtesseract)',
+                                    'target_link_libraries           (tesseract libtesseract)\n' +
+                                    'set(JS_HELPER "${CMAKE_CURRENT_SOURCE_DIR}/helpers.js")\n' +
+                                    'set(EMSCRIPTEN_LINK_FLAGS "--memory-init-file 0 -s TOTAL_MEMORY=134217728 ' +
+                                                               '-s ALLOW_MEMORY_GROWTH=1 -s DEMANGLE_SUPPORT=1")\n' +
+                                    'set(EMSCRIPTEN_LINK_FLAGS "${EMSCRIPTEN_LINK_FLAGS} -Wno-missing-prototypes")\n' +
+                                    'set(EMSCRIPTEN_LINK_FLAGS "${EMSCRIPTEN_LINK_FLAGS} --pre-js ${JS_HELPER}")\n' +
+                                    'set_target_properties(tesseract PROPERTIES LINK_FLAGS ${EMSCRIPTEN_LINK_FLAGS})')
+
+
+            tools.replace_in_file(os.path.join(self.source_subfolder, "src/api/baseapi.cpp"),
+                                  'locale = std::setlocale(LC_ALL, nullptr);',
+                                  'locale = std::setlocale(LC_ALL, nullptr);\n' +
+                                  '  #ifdef __emscripten__\n' +
+                                  "  if (locale[0]=='C')\n" +
+                                  '    locale="C"; // workaround for emscripten \n' +
+                                  '#endif\n'
+                                  )
 
         # provide patched lept.pc
         shutil.copy(os.path.join(self.deps_cpp_info['leptonica'].rootpath, 'lib', 'pkgconfig', 'lept.pc'), 'lept.pc')
@@ -63,7 +123,7 @@ class TesseractConan(ConanFile):
 
         # if static leptonica used with pkg-config, tesseract must use Leptonica_STATIC_LIBRARIES
         # which use static dependencies like jpeg, png etc provided by lept.pc
-        if not self.options['leptonica'].shared and use_pkg_config:
+        if not emcc and not self.options['leptonica'].shared and use_pkg_config:
             tools.replace_in_file(os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"),
                                   "target_link_libraries       (libtesseract ${Leptonica_LIBRARIES})",
                                   "target_link_libraries       (libtesseract ${Leptonica_STATIC_LIBRARIES})")
@@ -105,7 +165,7 @@ class TesseractConan(ConanFile):
                               "# Provide the include directories to the caller",
                               'get_filename_component(PACKAGE_PREFIX "${CMAKE_CURRENT_LIST_FILE}" PATH)\n'
                               'get_filename_component(PACKAGE_PREFIX "${PACKAGE_PREFIX}" PATH)')
-        if self.settings.os == 'Windows':
+        if hasattr(self.settings,'os') and self.settings.os == 'Windows':
             from_str = self.package_folder.replace('\\', '/')
         else:
             from_str = self.package_folder
@@ -116,7 +176,7 @@ class TesseractConan(ConanFile):
         # remove man pages
         shutil.rmtree(os.path.join(self.package_folder, 'share', 'man'), ignore_errors=True)
         # remove binaries
-        for ext in ['', '.exe']:
+        for ext in ['', '.exe','.js']:
             try:
                 os.remove(os.path.join(self.package_folder, 'bin', 'tesseract'+ext))
             except:
@@ -125,6 +185,8 @@ class TesseractConan(ConanFile):
 
     def package_info(self):
         self.cpp_info.libs = tools.collect_libs(self)
+        if self.is_emscripten():
+            return
         if self.settings.os == "Linux":
             self.cpp_info.libs.extend(["pthread"])
         if self.settings.compiler == "Visual Studio":
