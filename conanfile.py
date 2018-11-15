@@ -29,7 +29,7 @@ class TesseractConan(ConanFile):
     default_options = "shared=False", "fPIC=True", "with_training=False"
     source_subfolder = "source_subfolder"
 
-    requires = "leptonica/1.76.0@conanos/testing"
+    requires = "leptonica/1.76.0@conanos/stable"
 
     def is_emscripten(self):
         try:
