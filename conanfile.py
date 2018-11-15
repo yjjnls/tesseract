@@ -4,7 +4,7 @@
 import os
 import shutil
 from conans import ConanFile, CMake, tools
-
+from conanos.build import config_scheme
 try:
     import conanos.conan.hacks.cmake
 except:
@@ -36,23 +36,6 @@ class TesseractConan(ConanFile):
             return self.settings.compiler == 'emcc'
         except:
             return False
-    def configure(self):
-        if self.settings.compiler == 'gcc' and self.settings.compiler.version >= "5":
-            self.settings.compiler.libcxx = 'libstdc++11'
-        if self.is_emscripten():
-            del self.settings.os
-            del self.settings.arch
-            self.options.remove("fPIC")
-            self.options.remove("shared")
-            self.options.remove("with_training")
-
-    def source(self):
-        tools.get("https://github.com/tesseract-ocr/tesseract/archive/%s.tar.gz" % self.version)
-        os.rename("tesseract-" + self.version, self.source_subfolder)
-        os.rename(os.path.join(self.source_subfolder, "CMakeLists.txt"),
-                  os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"))
-        shutil.copy("CMakeLists.txt",
-                    os.path.join(self.source_subfolder, "CMakeLists.txt"))
 
     def config_options(self):
         if self.settings.os == "Windows":
@@ -66,6 +49,28 @@ class TesseractConan(ConanFile):
         if tools.os_info.is_linux and tools.os_info.with_apt:
             installer = tools.SystemPackageTool()
             installer.install('pkg-config')
+
+    def configure(self):
+        if self.settings.compiler == 'gcc' and self.settings.compiler.version >= "5":
+            self.settings.compiler.libcxx = 'libstdc++11'
+        if self.is_emscripten():
+            del self.settings.os
+            del self.settings.arch
+            self.options.remove("fPIC")
+            self.options.remove("shared")
+            self.options.remove("with_training")
+
+        config_scheme(self)
+
+    def source(self):
+        tools.get("https://github.com/tesseract-ocr/tesseract/archive/%s.tar.gz" % self.version)
+        os.rename("tesseract-" + self.version, self.source_subfolder)
+        os.rename(os.path.join(self.source_subfolder, "CMakeLists.txt"),
+                  os.path.join(self.source_subfolder, "CMakeListsOriginal.txt"))
+        shutil.copy("CMakeLists.txt",
+                    os.path.join(self.source_subfolder, "CMakeLists.txt"))
+
+
 
     def build(self):
         emcc = self.is_emscripten()
