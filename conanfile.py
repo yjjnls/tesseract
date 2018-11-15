@@ -14,7 +14,7 @@ except:
 
 class TesseractConan(ConanFile):
     name = "tesseract"
-    version = "4.0.0-rc3"
+    version = "4.0.0"
     description = "Tesseract Open Source OCR Engine"
     url = "http://github.com/bincrafters/conan-tesseract"
     license = "Apache-2.0"
@@ -37,15 +37,14 @@ class TesseractConan(ConanFile):
         except:
             return False
     def configure(self):
+        if self.settings.compiler == 'gcc' and self.settings.compiler.version >= "5":
+            self.settings.compiler.libcxx = 'libstdc++11'
         if self.is_emscripten():
             del self.settings.os
             del self.settings.arch
             self.options.remove("fPIC")
             self.options.remove("shared")
             self.options.remove("with_training")
-        else:
-            if self.options.shared:
-                self.options['leptonica'].shared = True
 
     def source(self):
         tools.get("https://github.com/tesseract-ocr/tesseract/archive/%s.tar.gz" % self.version)
