@@ -51,7 +51,7 @@ class TesseractConan(ConanFile):
             installer.install('pkg-config')
 
     def configure(self):
-        if self.settings.compiler == 'gcc' and self.settings.compiler.version >= "5":
+        if self.settings.compiler == 'gcc' and str(self.settings.compiler.version) >= '5':
             self.settings.compiler.libcxx = 'libstdc++11'
         if self.is_emscripten():
             del self.settings.os
