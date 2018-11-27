@@ -20,7 +20,7 @@ class TesseractConan(ConanFile):
     license = "Apache-2.0"
     homepage = "https://github.com/tesseract-ocr/tesseract"
     exports = ["LICENSE.md"]
-    exports_sources = ["CMakeLists.txt"]
+    exports_sources = ["CMakeLists.txt", "helpers.js"]
     generators = "cmake"
     settings = "os", "arch", "compiler", "build_type"
     options = {"shared": [True, False],
@@ -169,7 +169,7 @@ class TesseractConan(ConanFile):
                               "# Provide the include directories to the caller",
                               'get_filename_component(PACKAGE_PREFIX "${CMAKE_CURRENT_LIST_FILE}" PATH)\n'
                               'get_filename_component(PACKAGE_PREFIX "${PACKAGE_PREFIX}" PATH)')
-        if hasattr(self.settings,'os') and self.settings.os == 'Windows':
+        if not self.is_emscripten() and self.settings.os == 'Windows':
             from_str = self.package_folder.replace('\\', '/')
         else:
             from_str = self.package_folder
